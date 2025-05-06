@@ -1,0 +1,107 @@
+# Go-Back-N Mechanism with Individual Packet Sending
+
+set ns [new Simulator]
+
+# Node creation
+set n0 [$ns node]
+set n1 [$ns node]
+set n2 [$ns node]
+set n3 [$ns node]
+set n4 [$ns node]
+set n5 [$ns node]
+
+# Color and Shape
+foreach n [list $n0 $n1] { $n color "purple"; $n shape box }
+foreach n [list $n2 $n3] { $n color "violet"; $n shape box }
+foreach n [list $n4 $n5] { $n color "chocolate"; $n shape box }
+
+# Labels
+$ns at 0.0 "$n0 label SYS0"
+$ns at 0.0 "$n1 label SYS1"
+$ns at 0.0 "$n2 label SYS2"
+$ns at 0.0 "$n3 label SYS3"
+$ns at 0.0 "$n4 label SYS4"
+$ns at 0.0 "$n5 label SYS5"
+
+# Trace files
+set nf [open goback.nam w]
+$ns namtrace-all $nf
+
+set f [open goback.tr w]
+$ns trace-all $f
+
+# Link setup
+$ns duplex-link $n0 $n2 1Mb 20ms DropTail
+$ns duplex-link-op $n0 $n2 orient right-down
+$ns queue-limit $n0 $n2 5
+
+$ns duplex-link $n1 $n2 1Mb 20ms DropTail
+$ns duplex-link-op $n1 $n2 orient right-up
+
+$ns duplex-link $n2 $n3 1Mb 20ms DropTail
+$ns duplex-link-op $n2 $n3 orient right
+
+$ns duplex-link $n3 $n4 1Mb 20ms DropTail
+$ns duplex-link-op $n3 $n4 orient right-up
+
+$ns duplex-link $n3 $n5 1Mb 20ms DropTail
+$ns duplex-link-op $n3 $n5 orient right-down
+
+# TCP Agent
+Agent/TCP set nam_tracevar_ true
+
+set tcp [new Agent/TCP]
+$tcp set fid_ 1
+$ns attach-agent $n1 $tcp
+
+set sink [new Agent/TCPSink]
+$ns attach-agent $n4 $sink
+$ns connect $tcp $sink
+
+# FTP Application
+set ftp [new Application/FTP]
+$ftp attach-agent $tcp
+
+# FTP Start
+$ns at 0.05 "$ftp start"
+
+# Initial TCP Window Configuration
+$ns at 0.06 "$tcp set windowInit_ 6"
+$ns at 0.06 "$tcp set maxcwnd_ 6"
+
+# Simulate Packet Loss (Queue limit = 0 causes drop)
+$ns at 0.25 "$ns queue-limit $n3 $n4 0"
+
+# Re-enable Queue (allows retransmission)
+$ns at 0.26 "$ns queue-limit $n3 $n4 10"
+
+# Reduce window size after loss
+$ns at 0.305 "$tcp set windowInit_ 4"
+$ns at 0.305 "$tcp set maxcwnd_ 4"
+
+# Stop TCP and Sink
+$ns at 0.368 "$ns detach-agent $n1 $tcp; $ns detach-agent $n4 $sink"
+
+# Finish simulation
+$ns at 1.5 "finish"
+
+# NAM Annotations
+$ns at 0.0 "$ns trace-annotate \"Go-Back-N Protocol Simulation\""
+$ns at 0.05 "$ns trace-annotate \"FTP starts\""
+$ns at 0.06 "$ns trace-annotate \"Send 6 Packets from SYS1 to SYS4\""
+$ns at 0.26 "$ns trace-annotate \"Error: Packet 4 dropped, ACK not received\""
+$ns at 0.30 "$ns trace-annotate \"Retransmitting Packets 4 to 6\""
+$ns at 1.0 "$ns trace-annotate \"FTP stops\""
+
+# Finish procedure
+proc finish {} {
+    global ns nf
+    $ns flush-trace
+    close $nf
+    puts "Running NAM..."
+    exec nam goback.nam &
+    exit 0
+}
+
+# Run Simulation
+$ns run
